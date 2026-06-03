@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime
 from urllib.parse import urlparse
 
+import cairosvg
 import httpx
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
@@ -64,8 +65,8 @@ async def image(message: Message, backend_client: BackendClient, settings: Setti
 
     if generation.chart_image:
         try:
-            await _send_chart_image(message, generation.chart_image)
-        except (TelegramAPIError, httpx.HTTPError):
+            await message.answer_photo(generation.chart_image.url)
+        except (TelegramAPIError, httpx.HTTPError, ValueError):
             await message.answer("Не смог отправить изображение натальной карты.")
 
 
@@ -253,8 +254,8 @@ async def run_generation(
 
     if generation.chart_image:
         try:
-            await _send_chart_image(callback.message, generation.chart_image)
-        except (TelegramAPIError, httpx.HTTPError):
+            await callback.message.answer_photo(generation.chart_image.url)
+        except (TelegramAPIError, httpx.HTTPError, ValueError):
             pass
 
     for section in format_report_sections(generation.result_text):
@@ -304,36 +305,6 @@ async def _wait_for_generation(
         await asyncio.sleep(interval_seconds)
 
     return await backend_client.get_generation(generation_id)
-
-
-async def _send_chart_image(message: Message, chart_image: ChartImage) -> None:
-    if _is_svg_image(chart_image):
-        document = BufferedInputFile(
-            await _download_url(chart_image.url),
-            filename=_filename_from_url(chart_image.url, default="natal-chart.svg"),
-        )
-        await message.answer_document(document)
-        return
-
-    await message.answer_photo(chart_image.url)
-
-
-async def _download_url(url: str) -> bytes:
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, trust_env=False) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.content
-
-
-def _is_svg_image(chart_image: ChartImage) -> bool:
-    mime_type = chart_image.mime_type.lower().split(";", maxsplit=1)[0].strip()
-    path = urlparse(chart_image.url).path.lower()
-    return mime_type == "image/svg+xml" or path.endswith(".svg")
-
-
-def _filename_from_url(url: str, default: str) -> str:
-    filename = urlparse(url).path.rsplit("/", maxsplit=1)[-1]
-    return filename or default
 
 
 def _parse_gender(value: str) -> str | None:
