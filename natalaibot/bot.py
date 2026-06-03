@@ -2,7 +2,6 @@ import asyncio
 from datetime import datetime
 from urllib.parse import urlparse
 
-import cairosvg
 import httpx
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
@@ -51,23 +50,6 @@ async def start(message: Message, state: FSMContext) -> None:
         "Как тебя зовут?",
         reply_markup=ReplyKeyboardRemove(),
     )
-
-@router.message(Command("image"))
-async def image(message: Message, backend_client: BackendClient, settings: Settings) -> None:
-
-    generation = await _wait_for_generation(
-        backend_client=backend_client,
-        generation_id="113b7345-529e-40ae-a113-91986e8ed212",
-        attempts=settings.generation_poll_attempts,
-        interval_seconds=settings.generation_poll_interval_seconds,
-    )
-
-
-    if generation.chart_image:
-        try:
-            await message.answer_photo(generation.chart_image.url)
-        except (TelegramAPIError, httpx.HTTPError, ValueError):
-            await message.answer("Не смог отправить изображение натальной карты.")
 
 
 @router.message(Command("cancel"))
@@ -254,14 +236,14 @@ async def run_generation(
 
     if generation.chart_image:
         try:
-            await callback.message.answer_photo(generation.chart_image.url)
+            await _send_chart_image(callback.message, generation.chart_image)
         except (TelegramAPIError, httpx.HTTPError, ValueError):
             pass
 
     for section in format_report_sections(generation.result_text):
         for chunk in split_telegram_message(section):
             await callback.message.answer(chunk, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
-
+    await callback.message.answer("Напишите боту /start, чтобы запустить новый разбор!")
     await state.clear()
 
 
@@ -305,6 +287,26 @@ async def _wait_for_generation(
         await asyncio.sleep(interval_seconds)
 
     return await backend_client.get_generation(generation_id)
+
+
+async def _send_chart_image(message: Message, chart_image: ChartImage) -> None:
+    photo = BufferedInputFile(
+        await _download_url(chart_image.url),
+        filename=_filename_from_url(chart_image.url, default="natal-chart.png"),
+    )
+    await message.answer_photo(photo)
+
+
+async def _download_url(url: str) -> bytes:
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, trust_env=False) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.content
+
+
+def _filename_from_url(url: str, default: str) -> str:
+    filename = urlparse(url).path.rsplit("/", maxsplit=1)[-1]
+    return filename or default
 
 
 def _parse_gender(value: str) -> str | None:

@@ -18,22 +18,26 @@ from natalaibot.models import (
 
 
 @pytest.mark.asyncio
-async def test_run_generation_sends_svg_chart_as_document_before_report_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_generation_downloads_png_chart_and_sends_it_as_photo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     message = FakeMessage()
     callback = SimpleNamespace(message=message, answer=AsyncRecorder())
     state = FakeState()
-    backend_client = FakeBackendClient()
+    backend_client = FakeBackendClient(
+        chart_image=ChartImage(url="https://storage.example/chart.png?signature=abc", mime_type="image/png")
+    )
     settings = SimpleNamespace(generation_poll_attempts=1, generation_poll_interval_seconds=0)
 
     async def fake_download_url(url: str) -> bytes:
-        assert url == "https://storage.example/chart.svg"
-        return b"<svg />"
+        assert url == "https://storage.example/chart.png?signature=abc"
+        return b"\x89PNG\r\n\x1a\npng-bytes"
 
     monkeypatch.setattr(bot_module, "_download_url", fake_download_url, raising=False)
 
     await run_generation(callback, state, backend_client, settings)
 
-    assert message.calls[1] == ("answer_document", b"<svg />", "chart.svg")
+    assert message.calls[1] == ("answer_photo_file", b"\x89PNG\r\n\x1a\npng-bytes", "chart.png")
     assert [(call[0], call[1]) for call in message.calls[2:]] == [
         ("answer", "<b>Intro</b>\nIntro text."),
         ("answer", "<b>General</b>\nGeneral text."),
@@ -46,39 +50,23 @@ async def test_run_generation_sends_svg_chart_as_document_before_report_sections
 
 
 @pytest.mark.asyncio
-async def test_run_generation_sends_raster_chart_as_photo_before_report_sections() -> None:
+async def test_run_generation_sends_report_sections_when_chart_image_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     message = FakeMessage()
     callback = SimpleNamespace(message=message, answer=AsyncRecorder())
     state = FakeState()
     backend_client = FakeBackendClient(chart_image=ChartImage(url="https://storage.example/chart.png", mime_type="image/png"))
     settings = SimpleNamespace(generation_poll_attempts=1, generation_poll_interval_seconds=0)
 
-    await run_generation(callback, state, backend_client, settings)
+    async def fake_download_url(url: str) -> bytes:
+        raise TelegramBadRequest(method=None, message="wrong HTTP URL specified")
 
-    assert message.calls[1] == ("answer_photo", "https://storage.example/chart.png")
-    assert [(call[0], call[1]) for call in message.calls[2:]] == [
-        ("answer", "<b>Intro</b>\nIntro text."),
-        ("answer", "<b>General</b>\nGeneral text."),
-        ("answer", "<b>Love</b>\nLove text."),
-        ("answer", "<b>Career</b>\nCareer text."),
-        ("answer", "<b>Demons</b>\nDemons text."),
-        ("answer", "<b>Final</b>\nFinal text."),
-    ]
-    assert state.cleared is True
-
-
-@pytest.mark.asyncio
-async def test_run_generation_sends_report_sections_when_chart_image_fails() -> None:
-    message = FakeMessage(photo_error=TelegramBadRequest(method=None, message="wrong HTTP URL specified"))
-    callback = SimpleNamespace(message=message, answer=AsyncRecorder())
-    state = FakeState()
-    backend_client = FakeBackendClient(chart_image=ChartImage(url="https://storage.example/chart.png", mime_type="image/png"))
-    settings = SimpleNamespace(generation_poll_attempts=1, generation_poll_interval_seconds=0)
+    monkeypatch.setattr(bot_module, "_download_url", fake_download_url, raising=False)
 
     await run_generation(callback, state, backend_client, settings)
 
-    assert message.calls[1] == ("answer_photo", "https://storage.example/chart.png")
-    assert [(call[0], call[1]) for call in message.calls[2:]] == [
+    assert [(call[0], call[1]) for call in message.calls[1:]] == [
         ("answer", "<b>Intro</b>\nIntro text."),
         ("answer", "<b>General</b>\nGeneral text."),
         ("answer", "<b>Love</b>\nLove text."),
@@ -116,13 +104,11 @@ class FakeMessage:
         self.calls.append(("answer", text, kwargs.get("reply_markup")))
         return FakeSentMessage()
 
-    async def answer_photo(self, photo: str, **kwargs) -> None:
-        self.calls.append(("answer_photo", photo))
-        if self.photo_error:
-            raise self.photo_error
-
-    async def answer_document(self, document, **kwargs) -> None:
-        self.calls.append(("answer_document", document.data, document.filename))
+    async def answer_photo(self, photo, **kwargs) -> None:
+        if hasattr(photo, "data"):
+            self.calls.append(("answer_photo_file", photo.data, photo.filename))
+        else:
+            self.calls.append(("answer_photo", photo))
         if self.photo_error:
             raise self.photo_error
 
