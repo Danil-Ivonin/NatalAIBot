@@ -121,7 +121,7 @@ async def collect_birth_place(
 ) -> None:
     try:
         birth_place = await geocode_address(
-            message.text or "", settings.nomina_url, settings.nomina_base_agent, language="ru"
+            message.text or "", settings.locationiq_url, settings.locationiq_token, language="ru"
         )
         await state.update_data(birth_place=birth_place)
     except (GeocodingError, ValueError):

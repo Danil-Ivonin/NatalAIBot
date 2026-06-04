@@ -9,4 +9,6 @@ class Settings(BaseSettings):
     generation_poll_attempts: int = Field(default=80, alias="GENERATION_POLL_ATTEMPTS")
     nomina_base_agent: str = Field(default="natalai-geoservice/v1", alias="NOMINA_BASE_AGENT")
     nomina_url: str = Field(default="https://nominatim.openstreetmap.org/search", alias="NOMINA_URL")
+    locationiq_token: str = Field(alias="LOCATIONIQ_ACCESS_TOKEN")
+    locationiq_url: str = Field(default="https://us1.locationiq.com/v1/search", alias="LOCATIONIQ_URL")
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

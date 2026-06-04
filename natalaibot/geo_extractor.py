@@ -13,10 +13,9 @@ class GeocodingError(Exception):
 async def geocode_address(
     address: str,
     base_url: str,
-    user_agent: str,
+    api_key: str,
     *,
     language: str = "ru",
-    country_codes: Optional[list[str]] = None,
 ) -> Optional[GeoPoint]:
     """
     Получает latitude / longitude по адресу.
@@ -43,16 +42,14 @@ async def geocode_address(
 
     params = {
         "q": address,
-        "format": "jsonv2",
+        "format": "json",
         "addressdetails": 1,
         "limit": 1,
         "accept-language": language,
+        "key": api_key,
     }
 
-    if country_codes:
-        params["countrycodes"] = ",".join(country_codes)
-
-    headers = {"User-Agent": user_agent}
+    headers = {"accept": "application/json"}
 
     async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
         response = await client.get(base_url, params=params)
@@ -60,12 +57,12 @@ async def geocode_address(
     if response.status_code != 200:
         raise GeocodingError(f"Geocoding failed: {response.status_code} {response.text}")
 
-    results = response.json()
-
-    if not results:
+    if not response:
         raise GeocodingError(f"Geocoding failed: empty response: {response.text}")
 
-    best = results[0]
+    result = response.json()
+
+    best = result[0]
     latitude = float(best["lat"])
     longitude = float(best["lon"])
     city = best["address"]["city"]
