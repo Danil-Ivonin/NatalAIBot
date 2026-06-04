@@ -12,6 +12,8 @@ class GeoPoint(BaseModel):
     addr: str
     lat: float
     lng: float
+    city: str
+    nation: str
     timezone: str
 
 

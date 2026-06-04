@@ -131,10 +131,10 @@ async def collect_birth_place(
 
     await state.set_state(NatalForm.confirm_data)
     data = await state.get_data()
-    msg = f"""Подтвердите, что данные введены правильно:
+    msg = f"""Подтверди, что данные введены правильно:
     Имя: {data.get("person_name")}
     Дата рождения: {data.get("birth_date")} {data.get("birth_time")}
-    Место рождения: {data.get("birth_place").addr} {data.get("birth_place").timezone} 
+    Место рождения: {data.get("birth_place").addr} 
     """
     await message.answer(
         msg,

@@ -68,7 +68,8 @@ async def geocode_address(
     best = results[0]
     latitude = float(best["lat"])
     longitude = float(best["lon"])
-
+    city = best["address"]["city"]
+    nation = best["address"]["country_code"].upper()
     timezone = TimezoneFinder().timezone_at(
         lat=latitude,
         lng=longitude,
@@ -77,6 +78,4 @@ async def geocode_address(
     if timezone is None:
         raise GeocodingError(f"Could not determine timezone for coordinates: {latitude}, {longitude}")
 
-    return GeoPoint(
-        lat=float(best["lat"]), lng=float(best["lon"]), addr=best.get("display_name", address), timezone=timezone
-    )
+    return GeoPoint(lat=latitude, lng=longitude, addr=best.get("display_name", address), timezone=timezone, city=city, nation=nation)
