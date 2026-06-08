@@ -1,4 +1,4 @@
-from natalaibot.formatting import format_report_sections
+from natalaibot.infra.formatting import format_report_sections
 from natalaibot.models import ReportSection, StyledNatalReport
 
 

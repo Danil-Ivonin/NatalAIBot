@@ -1,17 +1,18 @@
 from types import SimpleNamespace
 
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardRemove
+from aiogram.types import InlineKeyboardMarkup
 import pytest
 
-from natalaibot.bot import collect_confirm_data, run_generation
-import natalaibot.bot as bot_module
+from natalaibot.handlers.generation import collect_confirm_data, run_generation
+import natalaibot.handlers.generation as generation_module
 from natalaibot.models import (
+    Character,
     ChartImage,
     GenerationCreated,
     GenerationRead,
     GeoPoint,
-    Persona,
+    PersonRead,
     ReportSection,
     StyledNatalReport,
 )
@@ -22,7 +23,7 @@ async def test_run_generation_downloads_png_chart_and_sends_it_as_photo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     message = FakeMessage()
-    callback = SimpleNamespace(message=message, answer=AsyncRecorder())
+    callback = SimpleNamespace(message=message, answer=AsyncRecorder(), from_user=SimpleNamespace(id=42))
     state = FakeState()
     backend_client = FakeBackendClient(
         chart_image=ChartImage(url="https://storage.example/chart.png?signature=abc", mime_type="image/png")
@@ -33,9 +34,11 @@ async def test_run_generation_downloads_png_chart_and_sends_it_as_photo(
         assert url == "https://storage.example/chart.png?signature=abc"
         return b"\x89PNG\r\n\x1a\npng-bytes"
 
-    monkeypatch.setattr(bot_module, "_download_url", fake_download_url, raising=False)
+    users_client = FakeUsersClient()
 
-    await run_generation(callback, state, backend_client, settings)
+    monkeypatch.setattr(generation_module, "_download_url", fake_download_url, raising=False)
+
+    await run_generation(callback, state, backend_client, users_client, settings)
 
     assert message.calls[1] == ("answer_photo_file", b"\x89PNG\r\n\x1a\npng-bytes", "chart.png")
     assert [(call[0], call[1]) for call in message.calls[2:]] == [
@@ -47,6 +50,7 @@ async def test_run_generation_downloads_png_chart_and_sends_it_as_photo(
         ("answer", "<b>Final</b>\nFinal text."),
     ]
     assert state.cleared is True
+    assert users_client.links == [(42, "generation-1")]
 
 
 @pytest.mark.asyncio
@@ -54,7 +58,7 @@ async def test_run_generation_sends_report_sections_when_chart_image_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     message = FakeMessage()
-    callback = SimpleNamespace(message=message, answer=AsyncRecorder())
+    callback = SimpleNamespace(message=message, answer=AsyncRecorder(), from_user=SimpleNamespace(id=42))
     state = FakeState()
     backend_client = FakeBackendClient(chart_image=ChartImage(url="https://storage.example/chart.png", mime_type="image/png"))
     settings = SimpleNamespace(generation_poll_attempts=1, generation_poll_interval_seconds=0)
@@ -62,9 +66,9 @@ async def test_run_generation_sends_report_sections_when_chart_image_fails(
     async def fake_download_url(url: str) -> bytes:
         raise TelegramBadRequest(method=None, message="wrong HTTP URL specified")
 
-    monkeypatch.setattr(bot_module, "_download_url", fake_download_url, raising=False)
+    monkeypatch.setattr(generation_module, "_download_url", fake_download_url, raising=False)
 
-    await run_generation(callback, state, backend_client, settings)
+    await run_generation(callback, state, backend_client, FakeUsersClient(), settings)
 
     assert [(call[0], call[1]) for call in message.calls[1:]] == [
         ("answer", "<b>Intro</b>\nIntro text."),
@@ -80,15 +84,30 @@ async def test_run_generation_sends_report_sections_when_chart_image_fails(
 @pytest.mark.asyncio
 async def test_confirm_data_removes_reply_keyboard_and_sends_persona_inline_keyboard() -> None:
     message = FakeMessage(text="Верно")
-    state = FakeState()
+    state = FakeState(
+        {
+            "person_name": "Ada",
+            "gender": "female",
+            "birth_date": "1990-01-02",
+            "birth_time": "03:04:00",
+            "birth_place": GeoPoint(
+                addr="Moscow",
+                lat=55.75,
+                lng=37.61,
+                city="Moscow",
+                nation="Russia",
+                timezone="Europe/Moscow",
+            ),
+        }
+    )
+    users_client = FakeUsersClient()
     backend_client = FakeBackendClient()
 
-    await collect_confirm_data(message, state, backend_client)
+    await collect_confirm_data(message, state, users_client, backend_client, telegram_id=42)
 
     assert state.state_name == "NatalForm:persona"
-    assert isinstance(message.calls[0][2], ReplyKeyboardRemove)
-    assert isinstance(message.calls[1][2], InlineKeyboardMarkup)
-    assert message.calls[1][1] == "Выбери персонажа, от чьего имени будет разобрана натальная карта:"
+    assert isinstance(message.calls[0][2], InlineKeyboardMarkup)
+    assert message.calls[0][1] == "Выберите персонажа, в чьём стиле будет выполнен разбор"
 
 
 class FakeMessage:
@@ -114,19 +133,35 @@ class FakeMessage:
 
 
 class FakeState:
-    def __init__(self) -> None:
+    def __init__(self, data: dict | None = None) -> None:
         self.cleared = False
         self.state_name = None
+        self.data = data or {
+            "selected_person": PersonRead(
+                person_id="person-1",
+                person_name="Ada",
+                gender="female",
+                birth_date="1990-01-02",
+                birth_time="03:04:00",
+                birth_place=GeoPoint(
+                    addr="Moscow",
+                    lat=55.75,
+                    lng=37.61,
+                    city="Moscow",
+                    nation="Russia",
+                    timezone="Europe/Moscow",
+                ),
+            ).model_dump(mode="python"),
+            "selected_character": Character(id="persona-1", name="Astrologer", slug="astrologer").model_dump(
+                mode="python"
+            ),
+        }
 
     async def get_data(self) -> dict:
-        return {
-            "person_name": "Ada",
-            "gender": "female",
-            "birth_date": "1990-01-02",
-            "birth_time": "03:04:00",
-            "birth_place": GeoPoint(addr="Moscow", lat=55.75, lng=37.61, timezone="Europe/Moscow"),
-            "persona_id": "persona-1",
-        }
+        return self.data
+
+    async def update_data(self, **kwargs) -> None:
+        self.data.update(kwargs)
 
     async def clear(self) -> None:
         self.cleared = True
@@ -139,10 +174,10 @@ class FakeBackendClient:
     def __init__(self, chart_image: ChartImage | None = None) -> None:
         self.chart_image = chart_image or ChartImage(url="https://storage.example/chart.svg", mime_type="image/svg+xml")
 
-    async def list_active_personas(self) -> list[Persona]:
+    async def list_active_characters(self) -> list[Character]:
         return [
-            Persona(id="persona-1", name="Astrologer", slug="astrologer"),
-            Persona(id="persona-2", name="Oracle", slug="oracle"),
+            Character(id="persona-1", name="Astrologer", slug="astrologer"),
+            Character(id="persona-2", name="Oracle", slug="oracle"),
         ]
 
     async def create_generation(self, payload) -> GenerationCreated:
@@ -163,6 +198,17 @@ class FakeBackendClient:
             ),
             chart_image=self.chart_image,
         )
+
+
+class FakeUsersClient:
+    def __init__(self) -> None:
+        self.links = []
+
+    async def create_person(self, telegram_id, payload):
+        return PersonRead(person_id="person-1", **payload.model_dump(mode="python"))
+
+    async def create_generation_link(self, telegram_id, generation_id):
+        self.links.append((telegram_id, generation_id))
 
 
 class AsyncRecorder:

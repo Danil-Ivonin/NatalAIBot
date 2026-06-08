@@ -1,8 +1,8 @@
 import httpx
 import pytest
 
-from natalaibot import backend_client
-from natalaibot.backend_client import BackendAPIError, BackendClient
+from natalaibot.http import backend_client
+from natalaibot.http.backend_client import BackendAPIError, BackendClient
 from natalaibot.models import GenerationCreate, GeoPoint
 
 
@@ -21,7 +21,7 @@ def test_backend_client_ignores_environment_proxy_settings(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
-async def test_list_personas_returns_active_personas() -> None:
+async def test_list_characters_returns_active_characters() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
         assert request.url.path == "/api/v1/personas"
@@ -62,7 +62,7 @@ async def test_list_personas_returns_active_personas() -> None:
         base_url="https://backend.example",
     ) as http_client:
         client = BackendClient(base_url="https://backend.example", http_client=http_client)
-        personas = await client.list_active_personas()
+        personas = await client.list_active_characters()
 
     assert [persona.name for persona in personas] == ["Roast Persona"]
 
@@ -78,6 +78,8 @@ async def test_create_generation_posts_contract_payload() -> None:
             addr="Moscow, Russia",
             lat=55.7558,
             lng=37.6173,
+            city="Moscow",
+            nation="Russia",
             timezone="Europe/Moscow",
         ),
         persona_id="22222222-2222-4222-8222-222222222222",
@@ -126,6 +128,8 @@ async def test_backend_error_uses_fastapi_detail() -> None:
                         addr="Moscow, Russia",
                         lat=55.7558,
                         lng=37.6173,
+                        city="Moscow",
+                        nation="Russia",
                         timezone="Europe/Moscow",
                     ),
                     persona_id="22222222-2222-4222-8222-222222222222",

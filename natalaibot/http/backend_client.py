@@ -3,7 +3,7 @@ from typing import Any
 
 import httpx
 
-from natalaibot.models import GenerationCreate, GenerationCreated, GenerationRead, Persona
+from natalaibot.models import GenerationCreate, GenerationCreated, GenerationRead, Character
 
 
 class BackendAPIError(RuntimeError):
@@ -24,11 +24,11 @@ class BackendClient:
             trust_env=False,
         )
 
-    async def list_active_personas(self) -> list[Persona]:
+    async def list_active_characters(self) -> list[Character]:
         response = await self._client.get("/api/v1/personas")
         data = self._parse_response(response)
-        personas = [Persona.model_validate(item) for item in data]
-        return [persona for persona in personas if persona.is_active]
+        characters = [Character.model_validate(item) for item in data]
+        return [character for character in characters if character.is_active]
 
     async def create_generation(self, payload: GenerationCreate) -> GenerationCreated:
         response = await self._client.post(

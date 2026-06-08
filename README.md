@@ -10,6 +10,8 @@ Create `.env` or export variables:
 ```bash
 BOT_TOKEN=telegram-bot-token
 BACKEND_BASE_URL=http://localhost:8000
+USERS_BASE_URL=http://localhost:8001
+OFFER_URL=https://example.com/offer.pdf
 GENERATION_POLL_INTERVAL_SECONDS=3
 GENERATION_POLL_ATTEMPTS=80
 ```
